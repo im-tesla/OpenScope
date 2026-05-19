@@ -1,0 +1,223 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body, #app {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #09090b;
+    color: #e4e4e7;
+  }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+}
+
+@layer components {
+  /* ---- Title Bar ---- */
+  .titlebar {
+    -webkit-app-region: drag;
+    user-select: none;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px 0 16px;
+    background: rgba(9, 9, 11, 0.95);
+    border-bottom: 1px solid rgba(139, 92, 246, 0.08);
+    z-index: 100;
+    position: relative;
+  }
+  .titlebar-label {
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #a1a1aa;
+  }
+  .titlebar-ctrls {
+    -webkit-app-region: no-drag;
+    display: flex;
+    gap: 4px;
+  }
+  .titlebar-btn {
+    width: 34px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    background: none; border: none; border-radius: 3px;
+    color: #71717a; cursor: pointer;
+    font-size: 13px;
+    transition: all 120ms;
+  }
+  .titlebar-btn:hover { background: #27272a; color: #d4d4d8; }
+  .titlebar-btn.close:hover { background: #dc2626; color: #fff; }
+
+  /* ---- Glass Panel ---- */
+  .glass-panel {
+    background: rgba(9, 9, 11, 0.9);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(139, 92, 246, 0.1);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  }
+
+  /* ---- Toolbar ---- */
+  .toolbar-btn {
+    width: 42px; height: 42px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 4px;
+    background: rgba(39, 39, 42, 0.6);
+    color: #a1a1aa;
+    cursor: pointer;
+    transition: all 150ms ease;
+    border: 1px solid transparent;
+    outline: none;
+    position: relative;
+  }
+  .toolbar-btn svg {
+    width: 18px; height: 18px;
+  }
+  .toolbar-btn:hover {
+    background: #3f3f46;
+    color: #e4e4e7;
+    border-color: rgba(139, 92, 246, 0.2);
+  }
+  .toolbar-btn:active {
+    background: #52525b;
+    transform: scale(0.95);
+  }
+  .toolbar-btn.active {
+    background: #8b5cf6;
+    color: #fff;
+    box-shadow: 0 0 16px rgba(139, 92, 246, 0.35);
+  }
+  .toolbar-btn.active:hover {
+    background: #7c3aed;
+  }
+  .toolbar-btn.danger {
+    background: rgba(127, 29, 29, 0.5);
+    color: #fca5a5;
+  }
+  .toolbar-btn.danger:hover {
+    background: #991b1b;
+    color: #fecaca;
+  }
+
+  /* ---- HUD Typography ---- */
+  .hud-value {
+    font-family: 'Cascadia Code', 'Consolas', 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- HUD Jog Buttons ---- */
+  .jog-btn {
+    width: 32px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid #27272a;
+    background: #18181b;
+    color: #a1a1aa;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 120ms;
+    outline: none;
+  }
+  .jog-btn:hover { background: #27272a; color: #e4e4e7; border-color: #3f3f46; }
+  .jog-btn:active { background: #3f3f46; }
+  .jog-btn:disabled { opacity: 0.35; pointer-events: none; }
+
+  /* ---- Settings ---- */
+  .settings-field {
+    background: #18181b;
+    border: 1px solid #27272a;
+    color: #e4e4e7;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: 'DM Mono', 'Consolas', monospace;
+    width: 100%;
+    outline: none;
+    transition: border-color 150ms, box-shadow 150ms;
+  }
+  .settings-field:focus {
+    border-color: #8b5cf6;
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+  }
+
+  .settings-select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath fill='%238b5cf6' d='M7 9L2 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 36px;
+  }
+
+  /* ---- Buttons ---- */
+  .btn-primary {
+    background: #8b5cf6;
+    color: #fff;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 5px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    cursor: pointer;
+    transition: all 120ms;
+    letter-spacing: 0.01em;
+  }
+  .btn-primary:hover { background: #7c3aed; box-shadow: 0 0 20px rgba(139, 92, 246, 0.25); }
+  .btn-primary:active { background: #6d28d9; transform: scale(0.98); }
+
+  .btn-secondary {
+    background: #27272a;
+    color: #a1a1aa;
+    border: 1px solid #3f3f46;
+    padding: 10px 24px;
+    border-radius: 5px;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    cursor: pointer;
+    transition: all 120ms;
+  }
+  .btn-secondary:hover { background: #3f3f46; color: #e4e4e7; }
+
+  /* ---- Resize Handles ---- */
+  .resize-n { position: absolute; top: 0; left: 0; right: 0; height: 3px; cursor: n-resize; z-index: 200; }
+  .resize-s { position: absolute; bottom: 0; left: 0; right: 0; height: 3px; cursor: s-resize; z-index: 200; }
+  .resize-e { position: absolute; top: 0; right: 0; bottom: 0; width: 3px; cursor: e-resize; z-index: 200; }
+  .resize-w { position: absolute; top: 0; left: 0; bottom: 0; width: 3px; cursor: w-resize; z-index: 200; }
+  .resize-ne { position: absolute; top: 0; right: 0; width: 6px; height: 6px; cursor: ne-resize; z-index: 200; }
+  .resize-nw { position: absolute; top: 0; left: 0; width: 6px; height: 6px; cursor: nw-resize; z-index: 200; }
+  .resize-se { position: absolute; bottom: 0; right: 0; width: 6px; height: 6px; cursor: se-resize; z-index: 200; }
+  .resize-sw { position: absolute; bottom: 0; left: 0; width: 6px; height: 6px; cursor: sw-resize; z-index: 200; }
+
+  /* ---- Status Indicator ---- */
+  .status-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    transition: all 300ms;
+  }
+  .status-dot.on {
+    background: #22c55e;
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.6), 0 0 2px rgba(34, 197, 94, 0.8);
+  }
+  .status-dot.off {
+    background: #ef4444;
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+  }
+
+  /* ---- Modal Overlay ---- */
+  .modal-overlay {
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+}

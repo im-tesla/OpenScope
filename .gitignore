@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-electron/
+release/
+.superpowers/
+*.log
+.env
+.DS_Store
+Thumbs.db
+*.tsbuildinfo

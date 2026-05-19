@@ -1,0 +1,10 @@
+appId: com.openscope.app
+productName: OpenScope
+directories:
+  output: release
+win:
+  target: portable
+files:
+  - dist-electron/**/*
+  - dist/**/*
+  - package.json
