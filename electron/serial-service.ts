@@ -198,6 +198,11 @@ export class SerialService {
     if (!this.serialReady) throw new Error('Serial not ready');
     if (this.pending) throw new Error('Command already in progress');
 
+    // Wait for motor sync to finish so sync responses don't eat this command's reply
+    while (this.syncInProgress) {
+      await new Promise(r => setTimeout(r, 10));
+    }
+
     return new Promise<string>((resolve, reject) => {
       const captured: PendingCommand = {
         resolve,
