@@ -1,6 +1,7 @@
 import { CameraView } from './components/CameraView';
 import { HudOverlay } from './components/HudOverlay';
 import { Toolbar } from './components/Toolbar';
+import { UartLog } from './components/UartLog';
 import { SettingsModal, type SettingsData } from './components/SettingsModal';
 import type { AppMode, FocusPoint, SweepParams, MotorParams } from './engine/state';
 import { defaultSweep, defaultMotor } from './engine/state';
@@ -9,6 +10,7 @@ export class App {
   camera: CameraView;
   hud: HudOverlay;
   toolbar: Toolbar;
+  uartLog: UartLog;
   settingsModal: SettingsModal;
   worker: Worker;
 
@@ -23,6 +25,7 @@ export class App {
     this.camera = new CameraView();
     this.hud = new HudOverlay();
     this.toolbar = new Toolbar();
+    this.uartLog = new UartLog();
     this.settingsModal = new SettingsModal();
     this.worker = new Worker(new URL('./engine/worker.ts', import.meta.url), { type: 'module' });
   }
@@ -36,12 +39,18 @@ export class App {
     app.appendChild(this.camera.el);
     app.appendChild(this.hud.el);
     app.appendChild(this.toolbar.el);
+    app.appendChild(this.uartLog.el);
     app.appendChild(this.settingsModal.el);
 
     this.bindEvents();
     await this.loadAndApplySettings();
     this.setupKeyboard();
-    this.startSerialListener();
+    this.setupSerialListeners();
+    this.uartLog.listen();
+
+    // Persist uartLog visibility
+    const uartOpen = await window.openscope.settings.get<boolean>('uartLogOpen', false);
+    if (uartOpen) this.uartLog.show();
   }
 
   private buildTitleBar(container: HTMLElement) {
@@ -73,7 +82,6 @@ export class App {
     bar.appendChild(ctrls);
     container.appendChild(bar);
 
-    // Double-click title bar to maximize
     bar.addEventListener('dblclick', () => window.openscope.window.maximize());
   }
 
@@ -99,9 +107,14 @@ export class App {
     this.toolbar.onStop = () => this.stop();
     this.toolbar.onZero = () => this.zeroPosition();
     this.toolbar.onSettings = () => this.openSettings();
+    this.toolbar.onUartToggle = () => this.toggleUartLog();
 
     this.hud.onJog = (dir) => this.jog(dir);
     this.hud.onZero = () => this.zeroPosition();
+
+    this.uartLog.onClose = () => {
+      window.openscope.settings.set('uartLogOpen', false);
+    };
 
     this.settingsModal.onSave = (data) => this.applySettings(data);
 
@@ -144,14 +157,47 @@ export class App {
         case 'Escape':     e.preventDefault(); this.stop(); break;
         case 'z':          if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); this.zeroPosition(); } break;
         case 's':          if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); this.openSettings(); } break;
+        case 'l':          if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); this.toggleUartLog(); } break;
       }
     });
   }
 
-  private startSerialListener() {
+  private setupSerialListeners() {
     const api = window.openscope.serial;
 
+    // Structured position updates from SerialService (fixes swallowed POS bug)
+    api.onPosition((payload) => {
+      this.currentPosition = payload.position;
+      this.hud.setPosition(payload.position);
+    });
+
+    // Connection state tracking
+    api.onConnectionState((payload) => {
+      const connected = payload.state === 'connected';
+      this.uartLog.setConnected(connected);
+
+      if (payload.state === 'connected') {
+        this.hud.setConnected(true);
+        this.toolbar.setEnabled(true);
+        this.hud.setJogEnabled(true);
+      } else if (payload.state === 'disconnected') {
+        this.hud.setConnected(false);
+        this.toolbar.setEnabled(false);
+        this.hud.setJogEnabled(false);
+        if (this.mode === 'sweeping' || this.mode === 'focusing') {
+          this.mode = 'error';
+          this.toolbar.setFocusActive(false);
+        }
+        if (this.workerResolve) {
+          this.workerResolve(0);
+          this.workerResolve = null;
+        }
+      }
+    });
+
+    // Keep raw data listener for backward compat (unsolicited STATUS lines, etc.)
     api.onData((data: string) => {
+      // Position is now tracked via onPosition, but keep fallback
       if (data.startsWith('POS ')) {
         const pos = parseInt(data.slice(4), 10);
         if (!isNaN(pos)) {
@@ -164,20 +210,6 @@ export class App {
         const pos = parseInt(statusMatch[1], 10);
         this.currentPosition = pos;
         this.hud.setPosition(pos);
-      }
-    });
-
-    api.onDisconnected(() => {
-      this.hud.setConnected(false);
-      this.toolbar.setEnabled(false);
-      this.hud.setJogEnabled(false);
-      if (this.mode === 'sweeping' || this.mode === 'focusing') {
-        this.mode = 'error';
-        this.toolbar.setFocusActive(false);
-      }
-      if (this.workerResolve) {
-        this.workerResolve(0);
-        this.workerResolve = null;
       }
     });
 
@@ -195,13 +227,13 @@ export class App {
 
     await this.camera.start(camId || undefined);
 
+    // Sync motor params to SerialService before connecting
+    await window.openscope.serial.setMotorParams(this.motorSettings);
+
     if (comPort) {
       try {
         await window.openscope.serial.connect(comPort, 115200);
-        this.hud.setConnected(true);
-        this.toolbar.setEnabled(true);
-        this.hud.setJogEnabled(true);
-        await this.syncMotorParams();
+        // Connection state and motor sync are now handled by SerialService internally
       } catch {
         this.hud.setConnected(false);
       }
@@ -218,6 +250,9 @@ export class App {
     this.sweepSettings = data.sweep;
     this.motorSettings = data.motor;
 
+    // Update SerialService with new motor params
+    await window.openscope.serial.setMotorParams(data.motor);
+
     const prevCam = await s.get<string>('_lastCam', '');
     if (data.cameraDeviceId !== prevCam) {
       await s.set('_lastCam', data.cameraDeviceId);
@@ -228,25 +263,15 @@ export class App {
     if (!wasConnected && data.comPort) {
       try {
         await window.openscope.serial.connect(data.comPort, 115200);
-        this.hud.setConnected(true);
-        this.toolbar.setEnabled(true);
-        this.hud.setJogEnabled(true);
-        await this.syncMotorParams();
       } catch {
         this.hud.setConnected(false);
       }
     }
   }
 
-  private async syncMotorParams() {
-    const m = this.motorSettings;
-    try {
-      await window.openscope.serial.send(`SPEED ${m.speed}`);
-      await window.openscope.serial.send(`ACCEL ${m.acceleration}`);
-      await window.openscope.serial.send(`PULSE ${m.pulseWidth}`);
-      await window.openscope.serial.send(`HOLD ${m.holdTime}`);
-      await window.openscope.serial.send('STATUS');
-    } catch { /* ignore */ }
+  private toggleUartLog() {
+    this.uartLog.toggle();
+    window.openscope.settings.set('uartLogOpen', this.uartLog.isVisible());
   }
 
   private async openSettings() {
