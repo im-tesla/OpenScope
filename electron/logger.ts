@@ -44,7 +44,12 @@ export class Logger {
         this.stream = null;
       }
       this.currentDate = today;
-      this.stream = fs.createWriteStream(this.logPath(today), { flags: 'a' });
+      try {
+        this.stream = fs.createWriteStream(this.logPath(today), { flags: 'a' });
+      } catch (err) {
+        console.error('Logger: failed to create log stream:', err);
+        this.stream = null;
+      }
       this.cleanupOldLogs(now);
     }
   }
@@ -80,7 +85,7 @@ export class Logger {
     for (const file of files) {
       const match = file.match(/^openscope-(\d{4}-\d{2}-\d{2})\.log$/);
       if (match) {
-        const fileDate = new Date(match[1]);
+        const fileDate = new Date(match[1] + 'T00:00:00');
         if (fileDate < cutoff) {
           try { fs.unlinkSync(path.join(this.logDir, file)); } catch { /* best effort */ }
         }
@@ -88,10 +93,16 @@ export class Logger {
     }
   }
 
-  dispose(): void {
-    if (this.stream) {
-      this.stream.end();
-      this.stream = null;
-    }
+  dispose(): Promise<void> {
+    return new Promise((resolve) => {
+      if (this.stream) {
+        this.stream.end(() => {
+          this.stream = null;
+          resolve();
+        });
+      } else {
+        resolve();
+      }
+    });
   }
 }
