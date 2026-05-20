@@ -1,21 +1,13 @@
-import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron';
 import * as path from 'path';
-import { SerialPort } from 'serialport';
-import { ReadlineParser } from '@serialport/parser-readline';
+import { SerialService, type MotorParams, type ConnectionState } from './serial-service';
+import { Logger } from './logger';
 import { SettingsStore } from './settings';
 
 let mainWindow: BrowserWindow | null = null;
-let port: SerialPort | null = null;
+let serialService: SerialService;
+let logger: Logger;
 let settings: SettingsStore;
-
-type PendingCommand = {
-  resolve: (data: string) => void;
-  reject: (err: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
-};
-
-let pending: PendingCommand | null = null;
-let serialReady = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -43,7 +35,7 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
-    disconnectSerial();
+    serialService.disconnect();
   });
 
   // Window control IPC
@@ -59,122 +51,82 @@ function createWindow() {
   ipcMain.handle('window:is-maximized', () => mainWindow?.isMaximized() ?? false);
 }
 
-// ---- Serial ----
+function setupSerialIPC() {
+  // Callback -> renderer helpers
+  const send = (channel: string, data: unknown) => {
+    mainWindow?.webContents.send(channel, data);
+  };
 
-function disconnectSerial() {
-  serialReady = false;
-  if (pending) {
-    clearTimeout(pending.timer);
-    pending.reject(new Error('Disconnected'));
-    pending = null;
-  }
-  if (port?.isOpen) {
-    port.close();
-  }
-  port = null;
+  serialService.setOnLogEntry((entry) => send('serial:log-entry', entry));
+  serialService.setOnData((data) => send('serial:data', data));
+  serialService.setOnPosition((pos) => send('serial:position', { position: pos }));
+  serialService.setOnConnectionState((state: ConnectionState) =>
+    send('serial:connection-state', { state })
+  );
+
+  // Invoke handlers
+  ipcMain.handle('serial:list', async () => serialService.listPorts());
+
+  ipcMain.handle('serial:connect', async (_e, path: string, baudRate: number) => {
+    await serialService.connect(path, baudRate);
+  });
+
+  ipcMain.handle('serial:disconnect', async () => {
+    serialService.disconnect();
+  });
+
+  ipcMain.handle('serial:send', async (_e, command: string) => {
+    return serialService.send(command);
+  });
+
+  ipcMain.handle('serial:is-connected', async () => {
+    return serialService.isConnected();
+  });
+
+  ipcMain.handle('serial:set-motor-params', async (_e, params: MotorParams) => {
+    serialService.setMotorParams(params);
+  });
+
+  ipcMain.handle('serial:log-query', async (_e, offset: number, count: number) => {
+    return serialService.queryLog(offset, count);
+  });
+
+  ipcMain.handle('serial:log-clear', async () => {
+    serialService.clearLog();
+  });
 }
 
-function sendToRenderer(channel: string, data: unknown) {
-  mainWindow?.webContents.send(channel, data);
+function setupLogIPC() {
+  ipcMain.handle('log:get-path', async () => {
+    return logger.getLogPath();
+  });
+
+  ipcMain.handle('log:open-folder', async () => {
+    shell.openPath(logger.getLogPath());
+  });
 }
-
-ipcMain.handle('serial:list', async () => {
-  const ports = await SerialPort.list();
-  return ports.map(p => ({ path: p.path, manufacturer: p.manufacturer, pnpId: p.pnpId }));
-});
-
-ipcMain.handle('serial:connect', async (_e, path: string, baudRate: number) => {
-  disconnectSerial();
-
-  port = new SerialPort({ path, baudRate });
-  const parser = port.pipe(new ReadlineParser({ delimiter: '\n' }));
-
-  parser.on('data', (line: string) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-
-    if (pending && serialReady) {
-      clearTimeout(pending.timer);
-      pending.resolve(trimmed);
-      pending = null;
-      return;
-    }
-
-    sendToRenderer('serial:data', trimmed);
-  });
-
-  port.on('close', () => {
-    port = null;
-    sendToRenderer('serial:disconnected', 'Port closed');
-  });
-
-  port.on('error', (err) => {
-    sendToRenderer('serial:error', err.message);
-  });
-
-  return new Promise<void>((resolve) => {
-    const bootTimer = setTimeout(() => {
-      resolve();
-    }, 2000);
-
-    parser.once('data', (line: string) => {
-      clearTimeout(bootTimer);
-      serialReady = true;
-      sendToRenderer('serial:data', line.trim());
-      resolve();
-    });
-  });
-});
-
-ipcMain.handle('serial:disconnect', async () => {
-  disconnectSerial();
-});
-
-ipcMain.handle('serial:send', async (_e, command: string) => {
-  if (!port?.isOpen) throw new Error('Not connected');
-  if (!serialReady) throw new Error('Serial not ready');
-
-  return new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pending = null;
-      reject(new Error('Command timeout'));
-    }, 5000);
-
-    pending = { resolve, reject, timer };
-    port!.write(command + '\n');
-  });
-});
-
-ipcMain.handle('serial:is-connected', async () => {
-  return port?.isOpen ?? false;
-});
-
-// ---- Settings ----
-
-ipcMain.handle('settings:get', async (_e, key: string, fallback: unknown) => {
-  return settings.get(key, fallback);
-});
-
-ipcMain.handle('settings:set', async (_e, key: string, value: unknown) => {
-  settings.set(key, value);
-});
-
-ipcMain.handle('settings:getAll', async () => {
-  return settings.getAll();
-});
 
 // ---- App lifecycle ----
 
 app.whenReady().then(() => {
   settings = new SettingsStore();
+  const logDir = path.join(app.getPath('userData'), 'logs');
+  logger = new Logger(logDir);
+  logger.info('window', 'Application started');
+  serialService = new SerialService(logger);
+
   createWindow();
+  setupSerialIPC();
+  setupLogIPC();
 });
 
-app.on('window-all-closed', () => {
-  disconnectSerial();
+app.on('window-all-closed', async () => {
+  serialService.disconnect();
+  await logger.dispose();
   app.quit();
 });
 
 app.on('before-quit', () => {
-  disconnectSerial();
+  serialService.disconnect();
+  logger.dispose();
 });
