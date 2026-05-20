@@ -4,11 +4,13 @@ export class Toolbar {
   private stopBtn: HTMLButtonElement;
   private zeroBtn: HTMLButtonElement;
   private settingsBtn: HTMLButtonElement;
+  private uartBtn: HTMLButtonElement;
 
   onFocus: (() => void) | null = null;
   onStop: (() => void) | null = null;
   onZero: (() => void) | null = null;
   onSettings: (() => void) | null = null;
+  onUartToggle: (() => void) | null = null;
 
   constructor() {
     this.el = document.createElement('div');
@@ -55,6 +57,16 @@ export class Toolbar {
     this.stopBtn.onclick = () => this.onStop?.();
     this.zeroBtn.onclick = () => this.onZero?.();
     this.settingsBtn.onclick = () => this.onSettings?.();
+
+    this.uartBtn = this.makeIcon(
+      `<svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4">
+        <rect x="2" y="5" width="16" height="10" rx="2"/>
+        <path d="M6 9l3 3 5-5"/>
+      </svg>`,
+      'UART Log'
+    );
+
+    this.uartBtn.onclick = () => this.onUartToggle?.();
   }
 
   private makeIcon(svg: string, title: string): HTMLButtonElement {
