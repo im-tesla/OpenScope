@@ -7,7 +7,7 @@ contextBridge.exposeInMainWorld('openscope', {
     connect: (path: string, baudRate: number) =>
       ipcRenderer.invoke('serial:connect', path, baudRate),
     disconnect: () => ipcRenderer.invoke('serial:disconnect'),
-    send: (command: string) => ipcRenderer.invoke('serial:send'),
+    send: (command: string) => ipcRenderer.invoke('serial:send', command),
     isConnected: () => ipcRenderer.invoke('serial:is-connected'),
     setMotorParams: (params: MotorParams) =>
       ipcRenderer.invoke('serial:set-motor-params', params),
