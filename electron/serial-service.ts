@@ -38,15 +38,6 @@ function toHex(str: string): string {
   return bytes.join(' ');
 }
 
-function asciiPreview(raw: string): string {
-  let out = '';
-  for (let i = 0; i < raw.length; i++) {
-    const c = raw.charCodeAt(i);
-    out += (c >= 32 && c <= 126) ? raw[i] : '.';
-  }
-  return out;
-}
-
 type PendingCommand = {
   resolve: (data: string) => void;
   reject: (err: Error) => void;
@@ -62,6 +53,9 @@ export class SerialService {
   private logger: Logger;
   private currentPosition = 0;
   private motorParams: MotorParams = { ...DEFAULT_MOTOR };
+  private bootTimer: ReturnType<typeof setTimeout> | null = null;
+  private syncInProgress = false;
+  private syncTimer: ReturnType<typeof setTimeout> | null = null;
 
   private onLogEntry: LogCallback | null = null;
   private onData: DataCallback | null = null;
@@ -116,8 +110,8 @@ export class SerialService {
         return;
       }
 
-      // Resolve pending command if one is waiting
-      if (this.pending && this.serialReady) {
+      // Resolve pending command if one is waiting (but not during motor sync)
+      if (this.pending && this.serialReady && !this.syncInProgress) {
         clearTimeout(this.pending.timer);
         this.pending.resolve(raw);
         this.pending = null;
@@ -132,14 +126,17 @@ export class SerialService {
     });
 
     this.port.on('error', (err) => {
+      this.serialReady = false;
+      this.emitConnectionState('disconnected');
       this.logger.error('serial', err.message);
     });
 
     return new Promise<void>((resolve) => {
       let resolved = false;
-      const bootTimer = setTimeout(() => {
+      this.bootTimer = setTimeout(() => {
         if (resolved) return;
         resolved = true;
+        this.bootTimer = null;
         this.serialReady = true;
         this.emitConnectionState('connected');
         this.logger.info('serial', `Connected to ${path}`);
@@ -150,7 +147,10 @@ export class SerialService {
       parser.once('data', (line: string) => {
         if (resolved) return;
         resolved = true;
-        clearTimeout(bootTimer);
+        if (this.bootTimer) {
+          clearTimeout(this.bootTimer);
+          this.bootTimer = null;
+        }
         this.serialReady = true;
         this.emitConnectionState('connected');
         this.logger.info('serial', `Connected to ${path}`);
@@ -168,6 +168,15 @@ export class SerialService {
 
   disconnect(): void {
     this.serialReady = false;
+    if (this.bootTimer) {
+      clearTimeout(this.bootTimer);
+      this.bootTimer = null;
+    }
+    if (this.syncTimer) {
+      clearTimeout(this.syncTimer);
+      this.syncTimer = null;
+      this.syncInProgress = false;
+    }
     if (this.pending) {
       clearTimeout(this.pending.timer);
       this.pending.reject(new Error('Disconnected'));
@@ -187,14 +196,21 @@ export class SerialService {
   async send(command: string): Promise<string> {
     if (!this.port?.isOpen) throw new Error('Not connected');
     if (!this.serialReady) throw new Error('Serial not ready');
+    if (this.pending) throw new Error('Command already in progress');
 
     return new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending = null;
-        reject(new Error('Command timeout'));
-      }, 5000);
+      const captured: PendingCommand = {
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          if (this.pending === captured) {
+            this.pending = null;
+          }
+          reject(new Error('Command timeout'));
+        }, 5000),
+      };
 
-      this.pending = { resolve, reject, timer };
+      this.pending = captured;
       this.writeRaw(command + '\n');
     });
   }
@@ -252,6 +268,13 @@ export class SerialService {
 
   private syncMotorParams(): void {
     const m = this.motorParams;
+    this.syncInProgress = true;
+    if (this.syncTimer) clearTimeout(this.syncTimer);
+    this.syncTimer = setTimeout(() => {
+      this.syncInProgress = false;
+      this.syncTimer = null;
+    }, 1000);
+
     this.writeRaw(`SPEED ${m.speed}\n`);
     this.writeRaw(`ACCEL ${m.acceleration}\n`);
     this.writeRaw(`PULSE ${m.pulseWidth}\n`);
