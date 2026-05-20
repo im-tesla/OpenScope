@@ -96,6 +96,20 @@ function setupSerialIPC() {
   });
 }
 
+function setupSettingsIPC() {
+  ipcMain.handle('settings:get', async (_e, key: string, fallback: unknown) => {
+    return settings.get(key, fallback);
+  });
+
+  ipcMain.handle('settings:set', async (_e, key: string, value: unknown) => {
+    settings.set(key, value);
+  });
+
+  ipcMain.handle('settings:getAll', async () => {
+    return settings.getAll();
+  });
+}
+
 function setupLogIPC() {
   ipcMain.handle('log:get-path', async () => {
     return logger.getLogPath();
@@ -116,6 +130,7 @@ app.whenReady().then(() => {
   serialService = new SerialService(logger);
 
   createWindow();
+  setupSettingsIPC();
   setupSerialIPC();
   setupLogIPC();
 });
@@ -128,5 +143,4 @@ app.on('window-all-closed', async () => {
 
 app.on('before-quit', () => {
   serialService.disconnect();
-  logger.dispose();
 });
