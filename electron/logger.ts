@@ -46,6 +46,10 @@ export class Logger {
       this.currentDate = today;
       try {
         this.stream = fs.createWriteStream(this.logPath(today), { flags: 'a' });
+        this.stream.on('error', (err) => {
+          console.error('Logger: write stream error:', err);
+          this.stream = null;
+        });
       } catch (err) {
         console.error('Logger: failed to create log stream:', err);
         this.stream = null;
